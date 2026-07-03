@@ -142,12 +142,15 @@ public class NodeEditorScreen extends Screen {
     private @Nullable EditorNode pendingDelete = null;
 
     /**
-     * #5: a wire segment armed for deletion by right-clicking its midpoint. The X
-     * button drawn at the midpoint, when left-clicked, breaks the chain: {@code child}
-     * and every sibling after it in the same container are moved to {@link #detached}.
-     * {@code parent} is the wire's upstream node (container head or previous sibling).
+     * #5: a wire segment armed for deletion by right-clicking anywhere along it. The X
+     * button is drawn right where the user clicked ({@link #wireDeleteGX}/{@link #wireDeleteGY},
+     * graph space); left-clicking it breaks the chain: {@code child} and every sibling
+     * after it in the same container are moved to {@link #detached}. {@code parent} is the
+     * wire's upstream node (container head or previous sibling).
      */
     private @Nullable WireRef pendingWireDelete = null;
+    /** #5: graph-space position of the armed delete-X (the point the user right-clicked). */
+    private float wireDeleteGX, wireDeleteGY;
 
     /** A single {@code parent -> child} wire within a container's chain. */
     private record WireRef(EditorNode parent, StatementNode child, StatementContainer container) {
@@ -1244,13 +1247,11 @@ public class NodeEditorScreen extends Screen {
     /**
      * #5: draw the armed wire-delete X. Called AFTER all nodes so it is never hidden
      * behind a node body. Runs inside the panned/scaled pose, so it draws in GRAPH space.
+     * The X sits at the point the user right-clicked (next to the cursor), not the midpoint.
      */
     private void renderWireDeleteOverlay(GuiGraphics g) {
-        if (pendingWireDelete != null) {
-            int[] mid = wireMidGraph(pendingWireDelete);
-            if (mid != null) {
-                drawWireDeleteX(g, mid[0], mid[1]);
-            }
+        if (pendingWireDelete != null && wireStillExists(pendingWireDelete)) {
+            drawWireDeleteX(g, Math.round(wireDeleteGX), Math.round(wireDeleteGY));
         }
     }
 
@@ -1278,23 +1279,9 @@ public class NodeEditorScreen extends Screen {
         }
     }
 
-    /** Graph-space midpoint of a wire (matches {@link #drawWire}'s horizontal run). */
-    private int @Nullable [] wireMidGraph(WireRef ref) {
-        // Only valid if the segment still exists in the live chain.
-        if (!ref.container().getChildStatements().contains(ref.child())) {
-            return null;
-        }
-        int[] out = anchorGraph(ref.parent(), true);
-        int[] in = anchorGraph(ref.child(), false);
-        int gx = (out[0] + in[0]) / 2;
-        int gy = (out[1] + in[1]) / 2; // the horizontal run sits at the mid Y
-        return new int[]{gx, gy};
-    }
-
-    /** Screen-space midpoint of a wire (for hit-testing against raw mouse coords). */
-    private int @Nullable [] wireMidScreen(WireRef ref) {
-        int[] g = wireMidGraph(ref);
-        return g == null ? null : new int[]{gx2sx(g[0]), gy2sy(g[1])};
+    /** Whether a wire segment still exists in the live chain. */
+    private boolean wireStillExists(WireRef ref) {
+        return ref.container().getChildStatements().contains(ref.child());
     }
 
     private void drawWire(GuiGraphics g, int x1, int y1, int x2, int y2) {
@@ -1319,31 +1306,56 @@ public class NodeEditorScreen extends Screen {
 
     /** Whether screen point (mx,my) is within the armed wire-delete X hitbox. */
     private boolean hitWireDeleteX(double mx, double my) {
-        if (pendingWireDelete == null) {
+        if (pendingWireDelete == null || !wireStillExists(pendingWireDelete)) {
             return false;
         }
-        int[] mid = wireMidScreen(pendingWireDelete);
-        if (mid == null) {
-            return false;
-        }
+        int cx = gx2sx(wireDeleteGX), cy = gy2sy(wireDeleteGY);
         int r = Math.round(WIRE_X_HALF * unit());
-        return mx >= mid[0] - r && mx <= mid[0] + r
-                && my >= mid[1] - r && my <= mid[1] + r;
+        return mx >= cx - r && mx <= cx + r
+                && my >= cy - r && my <= cy + r;
     }
 
-    /** Find a wire whose midpoint is near (mx,my) in screen space, or null. */
-    private @Nullable WireRef wireMidAt(double mx, double my) {
-        int r = Math.max(6, Math.round(WIRE_X_HALF * unit()));
+    /** #5: screen-space pick radius for right-clicking a wire (any segment). */
+    private static final int WIRE_PICK_PX = 6;
+
+    /**
+     * #5: find a wire whose drawn polyline (vertical/horizontal/vertical) passes near
+     * (mx,my) in screen space. Returns the nearest such wire, or null. Matching any of
+     * the three segments means a right-click anywhere along the wire triggers it.
+     */
+    private @Nullable WireRef wireAt(double mx, double my) {
+        double pick = Math.max(WIRE_PICK_PX, WIRE_PICK_PX * unit());
+        double best = pick * pick;
+        WireRef found = null;
         for (WireSeg seg : collectWireSegments()) {
-            int[] mid = wireMidScreen(seg.ref);
-            if (mid == null) {
-                continue;
-            }
-            if (mx >= mid[0] - r && mx <= mid[0] + r && my >= mid[1] - r && my <= mid[1] + r) {
-                return seg.ref;
+            int[] out = anchorScreen(seg.ref.parent(), true);
+            int[] in = anchorScreen(seg.ref.child(), false);
+            int x1 = out[0], y1 = out[1];
+            int x2 = in[0], y2 = in[1];
+            int midY = (y1 + y2) / 2;
+            // three segments: (x1,y1)->(x1,midY), (x1,midY)->(x2,midY), (x2,midY)->(x2,y2)
+            double d = Math.min(
+                    distToSegSq(mx, my, x1, y1, x1, midY),
+                    Math.min(
+                            distToSegSq(mx, my, x1, midY, x2, midY),
+                            distToSegSq(mx, my, x2, midY, x2, y2)));
+            if (d <= best) {
+                best = d;
+                found = seg.ref;
             }
         }
-        return null;
+        return found;
+    }
+
+    /** Squared distance from point (px,py) to the segment (ax,ay)-(bx,by). */
+    private static double distToSegSq(double px, double py, double ax, double ay, double bx, double by) {
+        double dx = bx - ax, dy = by - ay;
+        double len2 = dx * dx + dy * dy;
+        double t = len2 == 0 ? 0 : ((px - ax) * dx + (py - ay) * dy) / len2;
+        t = Math.max(0, Math.min(1, t));
+        double cx = ax + t * dx, cy = ay + t * dy;
+        double ex = px - cx, ey = py - cy;
+        return ex * ex + ey * ey;
     }
 
     /**
@@ -2506,11 +2518,17 @@ public class NodeEditorScreen extends Screen {
                     rebuild();
                     return true;
                 }
-                // #5: right-click on a wire midpoint arms that wire's delete-X.
-                WireRef wire = wireMidAt(mx, my);
+                // #5: right-click anywhere along a wire arms that wire's delete-X,
+                // placed right where the cursor is (next to the click).
+                WireRef wire = wireAt(mx, my);
                 if (wire != null) {
-                    pendingWireDelete = (pendingWireDelete != null
-                            && pendingWireDelete.child() == wire.child()) ? null : wire;
+                    boolean toggleOff = pendingWireDelete != null
+                            && pendingWireDelete.child() == wire.child();
+                    pendingWireDelete = toggleOff ? null : wire;
+                    if (!toggleOff) {
+                        wireDeleteGX = sx2gx(mx);
+                        wireDeleteGY = sy2gy(my);
+                    }
                     pendingDelete = null;
                     return true;
                 }
