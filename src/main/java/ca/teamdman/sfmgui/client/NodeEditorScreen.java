@@ -1007,16 +1007,18 @@ public class NodeEditorScreen extends Screen {
         return;
     }
 
-    // screen-space action buttons (fixed at top)
+    // screen-space action buttons (fixed at top): [Code Edit][Save][Preview][Exit]
     private static final int BTN_W = 64, BTN_H = 18, BTN_GAP = 4;
+    private static final int TOP_BTN_COUNT = 4;
 
     private void renderTopBar(GuiGraphics g, int mx, int my) {
         g.fill(0, 0, this.width, TOP_BAR_H, 0xFF2A2A2E);
         g.fill(0, TOP_BAR_H, this.width, TOP_BAR_H + 1, 0xFF000000);
-        int x = this.width - (BTN_W + BTN_GAP) * 3;
-        drawTopButton(g, mx, my, x, Loc.tr("gui.sfmgui.node_editor.save"));
-        drawTopButton(g, mx, my, x + (BTN_W + BTN_GAP), Loc.tr("gui.sfmgui.node_editor.toggle_preview") + ": " + onOff(showPreview));
-        drawTopButton(g, mx, my, x + (BTN_W + BTN_GAP) * 2, Loc.tr("gui.sfmgui.node_editor.exit"));
+        int x = this.width - (BTN_W + BTN_GAP) * TOP_BTN_COUNT;
+        drawTopButton(g, mx, my, x, Loc.tr("gui.sfmgui.node_editor.code_edit"));
+        drawTopButton(g, mx, my, x + (BTN_W + BTN_GAP), Loc.tr("gui.sfmgui.node_editor.save"));
+        drawTopButton(g, mx, my, x + (BTN_W + BTN_GAP) * 2, Loc.tr("gui.sfmgui.node_editor.toggle_preview") + ": " + onOff(showPreview));
+        drawTopButton(g, mx, my, x + (BTN_W + BTN_GAP) * 3, Loc.tr("gui.sfmgui.node_editor.exit"));
         // info: command count (vertically centered in the top bar)
         g.drawString(this.font, Loc.tr("gui.sfmgui.info.commands", countStatements()), 6, 8, 0xFFBBBBBB, false);
         // name box label (to the left of the box)
@@ -1035,7 +1037,7 @@ public class NodeEditorScreen extends Screen {
         String text = Loc.tr("gui.sfmgui.node_editor.labels_button", count) + (labelsDropdownOpen ? " \u25B2" : " \u25BC");
         int bx = nameBox.getX() + nameBox.getWidth() + 8;
         int by = 3;
-        int bw = Math.min(this.font.width(text) + 10, this.width - (BTN_W + BTN_GAP) * 3 - bx - 6);
+        int bw = Math.min(this.font.width(text) + 10, this.width - (BTN_W + BTN_GAP) * TOP_BTN_COUNT - bx - 6);
         if (bw < 24) {
             // not enough horizontal room; hide the button (dropdown still openable? no)
             labelsBtnW = 0;
@@ -1063,8 +1065,8 @@ public class NodeEditorScreen extends Screen {
         if (my < 3 || my > 3 + BTN_H) {
             return -1;
         }
-        int x = this.width - (BTN_W + BTN_GAP) * 3;
-        for (int i = 0; i < 3; i++) {
+        int x = this.width - (BTN_W + BTN_GAP) * TOP_BTN_COUNT;
+        for (int i = 0; i < TOP_BTN_COUNT; i++) {
             int bx = x + (BTN_W + BTN_GAP) * i;
             if (mx >= bx && mx <= bx + BTN_W) {
                 return i;
@@ -2363,9 +2365,11 @@ public class NodeEditorScreen extends Screen {
         int tb = topButtonAt(mx, my);
         if (tb >= 0 && button == 0) {
             if (tb == 0) {
+                openCodeEditor();
+            } else if (tb == 1) {
                 save();
                 Minecraft.getInstance().setScreen(previousScreen);
-            } else if (tb == 1) {
+            } else if (tb == 2) {
                 showPreview = !showPreview;
             } else {
                 onClose();
@@ -2919,6 +2923,27 @@ public class NodeEditorScreen extends Screen {
             return;
         }
         saveWriter.accept(generateSfml());
+    }
+
+    /**
+     * #task4: hand off to SFM's own text (code) editor. The current graph is emitted
+     * as SFML (with our layout/camera comments, which SFM ignores) and handed to SFM's
+     * program editor via an open-context that shares this editor's {@link #saveWriter},
+     * so pressing "Done" there saves back to the same manager. SFM is a compile-time
+     * dependency present at runtime, so these classes are safe to reference directly.
+     */
+    private void openCodeEditor() {
+        String sfml = generateSfml();
+        try {
+            var ctx = new ca.teamdman.sfm.client.text_editor.SFMTextEditScreenDiskOpenContext(
+                    sfml,
+                    ca.teamdman.sfm.common.label.LabelPositionHolder.empty(),
+                    saveWriter
+            );
+            ca.teamdman.sfm.client.screen.SFMScreenChangeHelpers.showProgramEditScreen(ctx);
+        } catch (Throwable t) {
+            SFMGui.LOGGER.error("Failed to open SFM code editor", t);
+        }
     }
 
     /** Mark the graph as edited so saving is allowed and the exit prompt appears. */

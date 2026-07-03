@@ -16,30 +16,36 @@ import net.neoforged.neoforge.network.PacketDistributor;
 /**
  * Injects addon buttons ("Visual Edit" and "Pull Labels") onto SFM's manager
  * screen without modifying SFM. Buttons are drawn and click-handled entirely
- * from screen events, above the manager GUI's top-left corner.
+ * from screen events, stacked in SFM's left button column just above the "Edit"
+ * button (in the gap below "Paste from clipboard").
  */
 @EventBusSubscriber(modid = SFMGui.MOD_ID, value = Dist.CLIENT)
 public final class SFMGuiClientEvents {
     public static final Loc VISUAL_EDIT = new Loc("gui.sfmgui.manager.visual_edit", "Visual Edit");
     public static final Loc PULL_LABELS = new Loc("gui.sfmgui.manager.pull_labels", "Pull Labels");
 
-    private static final int BTN_W = 70;
-    private static final int BTN_H = 14;
-    private static final int GAP = 2;
+    // Match SFM's left button column: x = guiLeft - 120, w = 120, h = 16. The two
+    // addon buttons sit stacked in the 34px gap between SFM's "Paste from clipboard"
+    // (bottom at guiTop+32) and "Edit" (top at guiTop+66) buttons.
+    private static final int BTN_W = 120;
+    private static final int BTN_H = 16;
+    private static final int COL_DX = 120; // left column offset from guiLeft
 
     private SFMGuiClientEvents() {
     }
 
-    private static int rowY(AbstractContainerScreen<?> s) {
-        return s.getGuiTop() - BTN_H - 2;
+    private static int colX(AbstractContainerScreen<?> s) {
+        return s.getGuiLeft() - COL_DX;
     }
 
-    private static int visualX(AbstractContainerScreen<?> s) {
-        return s.getGuiLeft();
+    /** Visual-edit button: first of the two, at guiTop + 32. */
+    private static int visualY(AbstractContainerScreen<?> s) {
+        return s.getGuiTop() + 32;
     }
 
-    private static int pullX(AbstractContainerScreen<?> s) {
-        return s.getGuiLeft() + BTN_W + GAP;
+    /** Pull-labels button: stacked directly below, at guiTop + 49. */
+    private static int pullY(AbstractContainerScreen<?> s) {
+        return s.getGuiTop() + 49;
     }
 
     @SubscribeEvent
@@ -48,11 +54,11 @@ public final class SFMGuiClientEvents {
             return;
         }
         GuiGraphics g = event.getGuiGraphics();
-        int y = rowY(ms);
-        drawButton(g, visualX(ms), y, VISUAL_EDIT.getComponent().getString(),
-                inside(event.getMouseX(), event.getMouseY(), visualX(ms), y));
-        drawButton(g, pullX(ms), y, PULL_LABELS.getComponent().getString(),
-                inside(event.getMouseX(), event.getMouseY(), pullX(ms), y));
+        int x = colX(ms);
+        drawButton(g, x, visualY(ms), VISUAL_EDIT.getComponent().getString(),
+                inside(event.getMouseX(), event.getMouseY(), x, visualY(ms)));
+        drawButton(g, x, pullY(ms), PULL_LABELS.getComponent().getString(),
+                inside(event.getMouseX(), event.getMouseY(), x, pullY(ms)));
     }
 
     private static void drawButton(GuiGraphics g, int x, int y, String text, boolean hover) {
@@ -70,15 +76,15 @@ public final class SFMGuiClientEvents {
             return;
         }
         double mx = event.getMouseX(), my = event.getMouseY();
-        int y = rowY(ms);
-        if (inside(mx, my, visualX(ms), y)) {
+        int x = colX(ms);
+        if (inside(mx, my, x, visualY(ms))) {
             try {
                 OpenEditorHelper.open(ms);
             } catch (Throwable t) {
                 SFMGui.LOGGER.error("Failed to open visual editor", t);
             }
             event.setCanceled(true);
-        } else if (inside(mx, my, pullX(ms), y)) {
+        } else if (inside(mx, my, x, pullY(ms))) {
             try {
                 PacketDistributor.sendToServer(new PullLabelsPayload(ms.getMenu().MANAGER_POSITION));
             } catch (Throwable t) {
