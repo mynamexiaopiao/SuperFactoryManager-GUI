@@ -67,6 +67,24 @@ the authors of **Steve's Factory Manager** (Vswe and gigabit101).
 
 ---
 
+## AI-Assisted Development / AI 辅助开发
+
+I am not an experienced programmer and lack the ability to build this project on my
+own. A large part of the code in this repository was written with the help of AI
+tools, under my direction and testing. Please keep this in mind:
+
+- The code may contain mistakes, non-idiomatic patterns, or rough edges.
+- Bug reports, reviews, and pull requests are very welcome and appreciated.
+- Credit for the underlying design and heavy lifting belongs to the upstream
+  projects listed above (Super Factory Manager, Steve's Factory Manager).
+
+> 作者本人编程能力有限，无法独立完成本项目。仓库中的大部分代码是在我的指导和测试下，
+> **借助 AI 工具**编写完成的。因此代码可能存在错误或不规范之处，欢迎提交 issue、
+> 审查与 PR。项目的核心设计与主要贡献归功于上述上游项目（Super Factory Manager、
+> Steve's Factory Manager）。
+
+---
+
 ## License / 开源协议
 
 This project is licensed under the **Mozilla Public License 2.0 (MPL-2.0)**, the
