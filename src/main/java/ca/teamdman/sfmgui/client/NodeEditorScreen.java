@@ -82,6 +82,8 @@ public class NodeEditorScreen extends Screen {
     private static final int TOOL_STEP = 18;
     private static final int CONN_W = ClassicTextures.CONN_W;
     private static final int CONN_H = ClassicTextures.CONN_H;
+    /** #1: grey-green overlay drawn on a connected endpoint nub. */
+    private static final int NUB_CONNECTED_TINT = 0x9088BB88;
     /** #3/#5: leading icon size + gap for collapsed-body resource rows. */
     private static final int BODY_ICON = 10;
     /** #2: top padding below the title divider before collapsed-body content. */
@@ -1385,13 +1387,6 @@ public class NodeEditorScreen extends Screen {
         int x = node.x, y = node.y;
         ClassicTextures.nodeFrameSized(g, x, y, L.width, L.height);
 
-        // #1: tint statement nodes that are wired into a trigger chain a light
-        // grey-green, so a "normal" (connected) node reads differently from a
-        // floating/detached one. Triggers are roots and are never tinted.
-        if (isConnected(node)) {
-            g.fill(x + 1, y + 1, x + L.width - 1, y + L.height - 1, 0x3055AA55);
-        }
-
         // #6: title + summary as ONE component, drawn in a single pass so both use
         // the same font metrics/baseline (no size/spacing mismatch between the two).
         // Single line, truncated to reserve the arrow/X gutter on the right.
@@ -1411,13 +1406,24 @@ public class NodeEditorScreen extends Screen {
             g.fill(bx, by, bx + 8, by + 1, 0xFFB04040);
             g.drawString(this.font, "\u2715", bx + 1, by, 0xFFFFFFFF, false);
         }
-        // nubs (aligned to anchor centers)
+        // nubs (aligned to anchor centers). #1: a nub whose wire is actually
+        // connected gets a light grey-green overlay so connected endpoints read
+        // differently from free ones. Input(top) nub = this node is some wire's
+        // child; output(bottom) nub = this node is some wire's parent.
         if (!(node instanceof TriggerNode)) {
             int[] p = anchorGraph(node, false);
-            ClassicTextures.connection(g, p[0] - CONN_W / 2, p[1] - CONN_H / 2, true, false);
+            int nx = p[0] - CONN_W / 2, ny = p[1] - CONN_H / 2;
+            ClassicTextures.connection(g, nx, ny, true, false);
+            if (isInputConnected(node)) {
+                g.fill(nx, ny, nx + CONN_W, ny + CONN_H, NUB_CONNECTED_TINT);
+            }
         }
         int[] po = anchorGraph(node, true);
-        ClassicTextures.connection(g, po[0] - CONN_W / 2, po[1] - CONN_H / 2, false, false);
+        int ox = po[0] - CONN_W / 2, oy = po[1] - CONN_H / 2;
+        ClassicTextures.connection(g, ox, oy, false, false);
+        if (isOutputConnected(node)) {
+            g.fill(ox, oy, ox + CONN_W, oy + CONN_H, NUB_CONNECTED_TINT);
+        }
 
         if (node.collapsed) {
             // #D/#3/#5: wrapped body rows. Lines with an icon reserve a left indent
@@ -2912,13 +2918,27 @@ public class NodeEditorScreen extends Screen {
     }
 
     /**
-     * #1: whether a node is "connected" — i.e. a statement wired into a trigger
-     * chain (has an owning container). Trigger roots and floating/detached
-     * statements are not connected.
+     * #1: whether a node's INPUT (top) nub has a wire attached — i.e. this node is the
+     * child endpoint of some drawn wire segment (a trigger or previous sibling feeds it).
      */
-    private boolean isConnected(EditorNode node) {
-        if (node instanceof StatementNode s) {
-            return graph.findOwningContainer(s) != null;
+    private boolean isInputConnected(EditorNode node) {
+        for (WireSeg seg : collectWireSegments()) {
+            if (seg.ref().child() == node) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * #1: whether a node's OUTPUT (bottom) nub has a wire attached — i.e. this node is
+     * the parent endpoint of some drawn wire segment (it feeds a child / next sibling).
+     */
+    private boolean isOutputConnected(EditorNode node) {
+        for (WireSeg seg : collectWireSegments()) {
+            if (seg.ref().parent() == node) {
+                return true;
+            }
         }
         return false;
     }

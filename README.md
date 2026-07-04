@@ -28,6 +28,25 @@ writing SFML (Super Factory Manager Language) by hand.
 
 ---
 
+## Downloads / 下载版本
+
+Each release ships **two** jars — pick one:
+
+- **`sfmgui-<mc>-<ver>-all.jar`** — the full build with the
+  [PinIn](https://github.com/Towdium/PinIn) library bundled in. **Chinese pinyin
+  search is supported.** This is the one most players want; just drop it in `mods/`.
+- **`sfmgui-<mc>-<ver>.jar`** — the slim build **without** PinIn bundled.
+  **Chinese pinyin search is NOT supported** (plain name/id search still works).
+  Use this only if PinIn is already provided elsewhere in your pack.
+
+> 每个发行版都提供**两个** jar，二选一：
+> - **`...-all.jar`**：完整版，已内置 [PinIn](https://github.com/Towdium/PinIn) 库，
+>   **支持中文拼音搜索**。大多数玩家用这个，直接丢进 `mods/` 即可。
+> - **不带 `-all` 的 `...jar`**：精简版，**未内置 PinIn，不支持中文拼音搜索**
+>   （普通名称/ID 搜索仍可用）。仅当你的整合包已另行提供 PinIn 时才用它。
+
+---
+
 ## Attribution & Sources / 参考来源
 
 This project stands on the shoulders of two prior works and is **not** an
