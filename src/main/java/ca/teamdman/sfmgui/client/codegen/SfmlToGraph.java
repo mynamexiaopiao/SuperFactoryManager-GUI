@@ -253,11 +253,35 @@ public final class SfmlToGraph {
         }
         // resources
         if (!rl.resourceIds().isEmpty()) {
-            String condensed = rl.resourceIds().toStringCondensed(); // already "a OR b"
-            // Represent OR-joined resources as comma-separated in the model (codegen re-joins with OR).
-            data.resources = condensed.replace(" OR ", ", ");
+            // Build each id's SFML form ourselves so a type-only MATCH_ALL (e.g. item::)
+            // is preserved instead of condensing to an empty string (which the codegen
+            // would then drop, silently deleting the limit). Ids within one limit are an
+            // OR-disjunction, kept as " or " in the model.
+            String joined = rl.resourceIds().stream()
+                    .map(SfmlToGraph::condenseResourceId)
+                    .reduce((a, b) -> a + " or " + b)
+                    .orElse("");
+            data.resources = joined;
         }
         return data;
+    }
+
+    /**
+     * SFML form for one resource id, preserving the resource TYPE even when the
+     * name/namespace are full wildcards. {@code ResourceIdentifier.toStringCondensed()}
+     * omits the default {@code item} type entirely (yielding an empty string for
+     * {@code item::}); here we fall back to {@code <type>::} so multi-type limits like
+     * {@code item::, fluid::} survive the round trip.
+     */
+    private static String condenseResourceId(ca.teamdman.sfml.ast.ResourceIdentifier<?, ?, ?> id) {
+        String condensed = id.toStringCondensed();
+        if (condensed != null && !condensed.isBlank()) {
+            return condensed;
+        }
+        // Empty condensed form == the default item type with wildcard ns/name. Emit the
+        // explicit type-wildcard so it isn't mistaken for "no resource" and dropped.
+        String type = id.resourceTypeName == null ? "item" : id.resourceTypeName;
+        return type + "::";
     }
 
     /** Thrown internally to signal a construct that must fall back to raw SFML. */
@@ -342,7 +366,12 @@ public final class SfmlToGraph {
             out.comparison = mapComparison(has.comparisonOperator());
             out.count = String.valueOf(has.quantity());
             if (!has.resourceIdSet().isEmpty()) {
-                out.resource = has.resourceIdSet().toStringCondensed().replace(" OR ", ", ");
+                // HAS resource set is a disjunction (matches any); keep " or " and
+                // preserve type-only wildcards via the shared condenser.
+                out.resource = has.resourceIdSet().stream()
+                        .map(SfmlToGraph::condenseResourceId)
+                        .reduce((a, b) -> a + " or " + b)
+                        .orElse("");
             }
         } else {
             // Complex/unsupported condition (AND/OR/NOT/paren, WITH/EXCEPT):

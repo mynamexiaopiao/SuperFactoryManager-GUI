@@ -336,16 +336,36 @@ public class NodeEditorScreen extends Screen {
         this.importWarning = computeImportWarning(this.initialProgram);
         LayoutMemory.apply(this.initialProgram, this.graph);
         // #2: de-overlap runs in init() (needs this.font for real node heights), not here.
-        // Detect an unparseable disk: non-blank source that either fails to compile
-        // or yields no triggers. In that state we must NOT overwrite the disk unless
-        // the user actually edits something (see generateSfml/save/onClose).
+        // Detect a disk we must NOT silently overwrite: a non-blank program that either
+        // fails to compile, yields no triggers, OR does not round-trip faithfully (the
+        // regenerated SFML would differ semantically). In any of these states we keep the
+        // original program verbatim unless the user actually edits something — this is the
+        // #1 safeguard against label/behaviour loss on a plain open+save.
         if (!this.initialProgram.isBlank()) {
             boolean compiles = canonical(this.initialProgram) != null;
-            if (!compiles || this.graph.triggers.isEmpty()) {
+            if (!compiles || this.graph.triggers.isEmpty() || !roundTripsFaithfully(this.initialProgram)) {
                 this.parseFailed = true;
             }
         }
         // default-expand the newest input/output style nodes on open? keep as saved.
+    }
+
+    /**
+     * #1: whether parsing then regenerating {@code sfml} yields a semantically identical
+     * program (same canonical AST). When it does not, the visual round trip is lossy and
+     * we must not overwrite the disk with the regenerated form unless the user edits.
+     */
+    private static boolean roundTripsFaithfully(String sfml) {
+        String before = canonical(sfml);
+        if (before == null) {
+            return false;
+        }
+        try {
+            String after = canonical(GraphToSfml.generate(SfmlToGraph.parse(sfml)));
+            return after != null && before.equals(after);
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
     /** Gap (graph px) kept between de-overlapped nodes. */
@@ -2693,6 +2713,50 @@ public class NodeEditorScreen extends Screen {
                     showToast(Component.translatable("gui.sfmgui.toast.redo"));
                 }
                 return true;
+            }
+            // #5: explicit clipboard shortcuts on the focused proxy, so select-all/copy/
+            // cut/paste work deterministically. We drive the proxy directly then mirror
+            // the value/caret (and selection for select-all) back to the on-canvas field.
+            if ((mods & GLFW.GLFW_MOD_CONTROL) != 0 && imeProxy != null) {
+                switch (key) {
+                    case GLFW.GLFW_KEY_A -> {
+                        int len = imeProxy.getValue().length();
+                        imeProxy.setCursorPosition(len);
+                        imeProxy.setHighlightPos(0);
+                        // reflect the full selection on the visible field
+                        activeField.caret = len;
+                        activeField.selAnchor = len == 0 ? -1 : 0;
+                        return true;
+                    }
+                    case GLFW.GLFW_KEY_C -> {
+                        String sel = imeProxy.getHighlighted();
+                        if (sel != null && !sel.isEmpty()) {
+                            Minecraft.getInstance().keyboardHandler.setClipboard(sel);
+                        }
+                        return true;
+                    }
+                    case GLFW.GLFW_KEY_X -> {
+                        String sel = imeProxy.getHighlighted();
+                        if (sel != null && !sel.isEmpty()) {
+                            Minecraft.getInstance().keyboardHandler.setClipboard(sel);
+                            imeProxy.insertText(""); // delete selection
+                            activeField.selAnchor = -1;
+                            syncActiveFieldFromProxy();
+                        }
+                        return true;
+                    }
+                    case GLFW.GLFW_KEY_V -> {
+                        String clip = Minecraft.getInstance().keyboardHandler.getClipboard();
+                        if (clip != null && !clip.isEmpty()) {
+                            imeProxy.insertText(clip); // replaces selection if any
+                            activeField.selAnchor = -1;
+                            syncActiveFieldFromProxy();
+                        }
+                        return true;
+                    }
+                    default -> {
+                    }
+                }
             }
             return super.keyPressed(key, scancode, mods);
         }

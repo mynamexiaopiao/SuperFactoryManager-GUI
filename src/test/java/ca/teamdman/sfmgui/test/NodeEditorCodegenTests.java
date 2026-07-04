@@ -255,13 +255,31 @@ public class NodeEditorCodegenTests {
         graph.name = "Disjunction";
         TriggerNode timer = new TriggerNode(0, 0, TriggerNode.Kind.TIMER);
         IOStatementNode input = io(StatementNode.Kind.INPUT, "a");
+        // Explicit " or " in one resource field = an OR disjunction within one limit.
+        input.limits.add(limit("", "", "minecraft:stone or minecraft:cobblestone"));
+        timer.statements.add(input);
+        graph.addTrigger(timer);
+
+        String sfml = GraphToSfml.generate(graph);
+        System.out.println(sfml);
+        assertTrue(sfml.contains(" or "), "explicit 'or' should be OR-joined within one limit");
+        SfmlTestSupport.assertNoCompileErrors(sfml);
+    }
+
+    @Test
+    public void commaResourcesBecomeSeparateLimitsCompiles() {
+        // Comma in one resource field = separate limits (not OR).
+        EditorGraph graph = new EditorGraph();
+        graph.name = "SeparateLimits";
+        TriggerNode timer = new TriggerNode(0, 0, TriggerNode.Kind.TIMER);
+        IOStatementNode input = io(StatementNode.Kind.INPUT, "a");
         input.limits.add(limit("", "", "minecraft:stone, minecraft:cobblestone"));
         timer.statements.add(input);
         graph.addTrigger(timer);
 
         String sfml = GraphToSfml.generate(graph);
         System.out.println(sfml);
-        assertTrue(sfml.contains(" or "), "multiple resources should be OR-joined");
+        assertTrue(!sfml.contains(" or "), "comma resources must not be OR-joined");
         SfmlTestSupport.assertNoCompileErrors(sfml);
     }
 
@@ -521,6 +539,64 @@ public class NodeEditorCodegenTests {
     public void roundTripWithTagFallsBackButPreserves() {
         // WITH clauses fall back to raw statements; must still preserve semantics.
         assertRoundTrip("NAME \"x\"\nEVERY 20 TICKS DO\n INPUT WITH #forge:ingots FROM chest\n OUTPUT TO b\nEND");
+    }
+
+    // ----- #2/#3/#4: multiple resource limits, type wildcards, comma vs OR -----
+    @Test
+    public void roundTripMultipleFullTypeLimitsPreserved() {
+        // #2: item::, fluid:: are TWO limits; item:: condenses to empty in SFM but must
+        // NOT be dropped — both type wildcards must survive the round trip.
+        assertRoundTrip("NAME \"x\"\nEVERY 20 TICKS DO\n INPUT item::, fluid:: FROM a\n OUTPUT TO b\nEND");
+    }
+
+    @Test
+    public void roundTripThreeSeparateResourceLimits() {
+        // #4: chem, salt, iron are three independent limits (comma-separated) and must
+        // stay three comma-separated limits, not collapse or OR-join.
+        assertRoundTrip("NAME \"x\"\nEVERY 20 TICKS DO\n"
+                        + " OUTPUT chemical:mekanism:sulfuric_acid, alltheores:salt, iron TO b\nEND");
+    }
+
+    @Test
+    public void commaInOneResourceFieldBecomesSeparateLimits() {
+        // #3: a user typing "salt,iron" in ONE resource field must emit comma-separated
+        // limits ("salt, iron"), NOT an "salt or iron" disjunction.
+        EditorGraph graph = new EditorGraph();
+        graph.name = "x";
+        TriggerNode timer = new TriggerNode(0, 0, TriggerNode.Kind.TIMER);
+        IOStatementNode out = io(StatementNode.Kind.OUTPUT, "b");
+        ResourceLimitData l = new ResourceLimitData();
+        l.resources = "alltheores:salt,iron";
+        out.limits.add(l);
+        timer.statements.add(out);
+        graph.addTrigger(timer);
+
+        String sfml = GraphToSfml.generate(graph);
+        System.out.println(sfml);
+        assertTrue(sfml.contains("alltheores:salt, iron") || sfml.contains("alltheores:salt,iron"),
+                "comma-separated resources should stay comma-separated (separate limits)");
+        assertTrue(!sfml.contains(" or "), "must NOT OR-join comma-separated resources");
+        SfmlTestSupport.assertNoCompileErrors(sfml);
+    }
+
+    @Test
+    public void explicitOrInResourceFieldStaysDisjunction() {
+        // A single limit that explicitly wants "match any" via " or " keeps the OR form.
+        EditorGraph graph = new EditorGraph();
+        graph.name = "x";
+        TriggerNode timer = new TriggerNode(0, 0, TriggerNode.Kind.TIMER);
+        IOStatementNode out = io(StatementNode.Kind.OUTPUT, "b");
+        ResourceLimitData l = new ResourceLimitData();
+        l.quantity = "5";
+        l.resources = "alltheores:salt or iron";
+        out.limits.add(l);
+        timer.statements.add(out);
+        graph.addTrigger(timer);
+
+        String sfml = GraphToSfml.generate(graph);
+        System.out.println(sfml);
+        assertTrue(sfml.contains(" or "), "explicit 'or' should stay an OR disjunction in one limit");
+        SfmlTestSupport.assertNoCompileErrors(sfml);
     }
 
     @Test

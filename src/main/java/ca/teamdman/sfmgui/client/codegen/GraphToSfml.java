@@ -151,15 +151,52 @@ public final class GraphToSfml {
     private static String buildLimitList(IOStatementNode io) {
         List<String> parts = new ArrayList<>();
         for (ResourceLimitData limit : io.limits) {
-            String s = limitToSfml(limit);
-            if (!s.isEmpty()) {
-                parts.add(s);
+            // A single limit row may list several resources separated by commas; per SFML
+            // grammar a comma starts a NEW limit (each with its own budget), so we expand
+            // each comma-separated resource into its own limit sharing this row's
+            // quantity/retain/with. Ids joined by " or " within a part stay one limit
+            // (an OR-disjunction matching any).
+            List<String> resourceParts = splitTopLevelResources(limit.resources);
+            if (resourceParts.isEmpty()) {
+                // No resources: emit the bare quantity/retain/with limit if it has any,
+                // else skip entirely (an empty limit contributes nothing).
+                String s = limitToSfml(limit, "");
+                if (!s.isEmpty()) {
+                    parts.add(s);
+                }
+            } else {
+                for (String rp : resourceParts) {
+                    String s = limitToSfml(limit, rp);
+                    if (!s.isEmpty()) {
+                        parts.add(s);
+                    }
+                }
             }
         }
         return String.join(", ", parts);
     }
 
-    private static String limitToSfml(ResourceLimitData limit) {
+    /**
+     * Split a limit row's resource field into separate limits on top-level commas.
+     * Each returned element is a single resource id or an {@code " or "} disjunction that
+     * belongs to one limit. Blank pieces are dropped.
+     */
+    private static List<String> splitTopLevelResources(String raw) {
+        List<String> out = new ArrayList<>();
+        if (raw == null || raw.isBlank()) {
+            return out;
+        }
+        for (String piece : raw.split(",")) {
+            String p = piece.trim();
+            if (!p.isEmpty()) {
+                out.add(p);
+            }
+        }
+        return out;
+    }
+
+    /** Emit one limit with a specific (already comma-split) resource string. */
+    private static String limitToSfml(ResourceLimitData limit, String resourceString) {
         List<String> parts = new ArrayList<>();
         String quantity = trimOrEmpty(limit.quantity);
         String retain = trimOrEmpty(limit.retain);
@@ -169,7 +206,7 @@ public final class GraphToSfml {
         if (!retain.isEmpty()) {
             parts.add("retain " + retain + (limit.retainEach ? " each" : ""));
         }
-        String resources = buildResourceDisjunction(limit.resources);
+        String resources = buildResourceDisjunction(resourceString);
         if (!resources.isEmpty()) {
             parts.add(resources);
         }
@@ -300,23 +337,54 @@ public final class GraphToSfml {
     }
 
     // ----- resource id lists -----
-    /** Comma-separated resource id list (used by EXCEPT). */
+    /** Comma-separated resource id list (used by EXCEPT, which is comma-delimited). */
     private static String buildResourceIdList(String raw) {
-        return joinResources(raw, ", ");
+        return joinResources(splitOnComma(raw), ", ");
     }
 
-    /** OR-joined resource id disjunction (used by limits and HAS). */
+    /**
+     * OR-joined resource id disjunction within ONE limit. The input is a single
+     * comma-split limit part (see {@link #splitTopLevelResources}); any {@code " or "}
+     * inside it separates the disjunction members. Case-insensitive on the OR keyword.
+     */
     private static String buildResourceDisjunction(String raw) {
-        return joinResources(raw, " or ");
+        return joinResources(splitOnOr(raw), " or ");
     }
 
-    private static String joinResources(String raw, String sep) {
-        if (raw == null || raw.isBlank()) {
-            return "";
-        }
+    /** Split a resource string on top-level commas. */
+    private static List<String> splitOnComma(String raw) {
         List<String> out = new ArrayList<>();
+        if (raw == null || raw.isBlank()) {
+            return out;
+        }
         for (String piece : raw.split(",")) {
             String r = piece.trim();
+            if (!r.isEmpty()) {
+                out.add(r);
+            }
+        }
+        return out;
+    }
+
+    /** Split a single limit's resource string on the {@code or} keyword (case-insensitive). */
+    private static List<String> splitOnOr(String raw) {
+        List<String> out = new ArrayList<>();
+        if (raw == null || raw.isBlank()) {
+            return out;
+        }
+        // Split on " or " with surrounding whitespace, case-insensitive; also allow "|".
+        for (String piece : raw.split("(?i)\\s+or\\s+|\\s*\\|\\s*")) {
+            String r = piece.trim();
+            if (!r.isEmpty()) {
+                out.add(r);
+            }
+        }
+        return out;
+    }
+
+    private static String joinResources(List<String> ids, String sep) {
+        List<String> out = new ArrayList<>();
+        for (String r : ids) {
             if (!r.isEmpty()) {
                 // #1: emit glob wildcards bare (*), genuine regexes quoted, so a parsed
                 // *configurable_* round-trips back to *configurable_* (not ".*configurable_.*").
