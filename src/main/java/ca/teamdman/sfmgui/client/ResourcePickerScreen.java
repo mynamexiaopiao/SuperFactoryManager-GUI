@@ -125,7 +125,6 @@ public class ResourcePickerScreen extends Screen {
         scrollRow = 0;
     }
 
-    @Override
     public void renderBackground(GuiGraphics graphics, int mx, int my, float partialTick) {
     }
 
@@ -215,10 +214,10 @@ public class ResourcePickerScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mx, double my, double scrollX, double scrollY) {
+    public boolean mouseScrolled(double mx, double my, double delta) {
         int totalRows = (filtered.size() + COLS - 1) / COLS;
         int maxScroll = Math.max(0, totalRows - visibleRows());
-        scrollRow = Mth.clamp(scrollRow - (int) Math.signum(scrollY), 0, maxScroll);
+        scrollRow = Mth.clamp(scrollRow - (int) Math.signum(delta), 0, maxScroll);
         return true;
     }
 
